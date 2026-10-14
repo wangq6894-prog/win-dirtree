@@ -1,0 +1,17 @@
+# 生成的树状图文本
+*_tree.txt
+
+# 离线安装包（体积大，不纳入版本控制）
+*.tar.bz2
+*.zip
+*.7z
+
+# 依赖目录（本项目零依赖，防止手滑）
+node_modules/
+
+# 编辑器 / 系统文件
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+Desktop.ini
