@@ -124,6 +124,56 @@ check('默认输出写在被扫目录里且不包含自身', () => {
   assert.ok(!defaultTree.includes('fixture_tree.txt'), '输出文件出现在了树里');
 });
 
+// ---------- 长路径（路径超过 250 字符后应自动加 \\?\ 前缀） ----------
+
+let deepPath = fixtureDir;
+for (let i = 0; i < 60; i++) {
+  deepPath = path.join(deepPath, `lvl-${String(i).padStart(2, '0')}`);
+}
+
+let deepReady = false;
+try {
+  fs.mkdirSync('\\\\?\\' + deepPath, { recursive: true });
+  fs.writeFileSync('\\\\?\\' + path.join(deepPath, 'bottom-marker.txt'), 'x');
+  deepReady = true;
+} catch (err) {
+  console.log(`跳过长路径测试：${err.message}`);
+}
+
+if (deepReady) {
+  check('超过 250 字符的深路径也能扫到', () => {
+    const outDeep = path.join(outDir, 'deep.txt');
+    const r = runDirtree([fixtureDir, outDeep, '--no-progress']);
+    assert.strictEqual(r.status, 0, `stderr: ${r.stderr}`);
+    assert.ok(
+      fs.readFileSync(outDeep, 'utf8').includes('bottom-marker.txt'),
+      '最深层文件没出现在输出里'
+    );
+  });
+}
+
+// ---------- 结果确定性 ----------
+
+check('不同 --jobs 的输出完全一致', () => {
+  const outA = path.join(outDir, 'jobs1.txt');
+  const outB = path.join(outDir, 'jobs8.txt');
+  runDirtree([fixtureDir, outA, '-j', '1', '--no-progress']);
+  runDirtree([fixtureDir, outB, '--jobs=8', '--no-progress']);
+  assert.strictEqual(fs.readFileSync(outA, 'utf8'), fs.readFileSync(outB, 'utf8'));
+});
+
+check('-d1、--depth=1、--depth 1 三种写法输出一致', () => {
+  const outA = path.join(outDir, 'd-short.txt');
+  const outB = path.join(outDir, 'd-eq.txt');
+  const outC = path.join(outDir, 'd-plain.txt');
+  runDirtree([fixtureDir, outA, '-d1', '--no-progress']);
+  runDirtree([fixtureDir, outB, '--depth=1', '--no-progress']);
+  runDirtree([fixtureDir, outC, '--depth', '1', '--no-progress']);
+  const a = fs.readFileSync(outA, 'utf8');
+  assert.strictEqual(a, fs.readFileSync(outB, 'utf8'));
+  assert.strictEqual(a, fs.readFileSync(outC, 'utf8'));
+});
+
 // ---------- 参数校验 ----------
 
 check('-h 打印帮助并以 0 退出', () => {
@@ -149,6 +199,10 @@ check('路径不存在时报错退出', () => {
 
 // ---------- 收尾 ----------
 
+// 超长深层目录先加 \\?\ 前缀删掉，rmSync 拼接超长路径不一定可靠
+try {
+  fs.rmSync('\\\\?\\' + deepPath, { recursive: true, force: true });
+} catch {}
 fs.rmSync(workDir, { recursive: true, force: true });
 
 console.log(`\n${passed} 项通过，${failures.length} 项失败`);
