@@ -26,8 +26,13 @@ function check(name, fn) {
   }
 }
 
+// 固定用中文跑，避免断言依赖运行机器的系统语言；
+// 单条用例自带 --lang 时命令行优先于这个环境变量
 function runDirtree(args) {
-  return spawnSync(process.execPath, [SCRIPT, ...args], { encoding: 'utf8' });
+  return spawnSync(process.execPath, [SCRIPT, ...args], {
+    encoding: 'utf8',
+    env: { ...process.env, DIRTREE_LANG: 'zh' },
+  });
 }
 
 // ---------- 构造测试目录 ----------
@@ -180,6 +185,27 @@ check('-h 打印帮助并以 0 退出', () => {
   const r = runDirtree(['-h']);
   assert.strictEqual(r.status, 0);
   assert.ok(r.stdout.includes('用法'));
+});
+check('-v 显示版本号', () => {
+  const r = runDirtree(['-v']);
+  assert.strictEqual(r.status, 0);
+  assert.ok(/^dirtree \d+\.\d+\.\d+/m.test(r.stdout), `stdout: ${r.stdout}`);
+});
+check('--lang en 切换英文帮助', () => {
+  const r = runDirtree(['--lang', 'en', '-h']);
+  assert.strictEqual(r.status, 0);
+  assert.ok(r.stdout.includes('Usage'), '帮助不是英文');
+});
+check('--lang en 的完成消息是英文', () => {
+  const outEn = path.join(outDir, 'en.txt');
+  const r = runDirtree([fixtureDir, outEn, '--lang=en', '--no-progress']);
+  assert.strictEqual(r.status, 0, `stderr: ${r.stderr}`);
+  assert.ok(r.stdout.includes('Tree written to'), `stdout: ${r.stdout}`);
+});
+check('--lang 传非法值报错退出', () => {
+  const r = runDirtree([fixtureDir, '--lang', 'fr']);
+  assert.strictEqual(r.status, 1);
+  assert.ok(r.stderr.includes('错误'));
 });
 check('--depth 传非数字时报错退出', () => {
   const r = runDirtree([fixtureDir, '--depth', 'abc']);

@@ -1,5 +1,7 @@
 # dirtree
 
+[![CI](https://github.com/wangq6894-prog/win-dirtree/actions/workflows/ci.yml/badge.svg)](https://github.com/wangq6894-prog/win-dirtree/actions/workflows/ci.yml)
+
 把盘符或文件夹里的所有文件和文件夹画成树状图，写进一个文本文件。
 
 仅支持 Windows。需要 Node.js 18 或更高版本，无第三方依赖。
@@ -40,7 +42,11 @@ node dirtree.js D: --elevate          :: 以管理员身份运行
 | `-j, --jobs N` | 同时处理的文件夹数，默认 32 |
 | `--elevate` | 以管理员身份运行（会弹 UAC） |
 | `--no-progress` | 不显示扫描进度 |
+| `--lang zh\|en` | 界面与帮助的语言，默认跟随系统 |
+| `-v, --version` | 显示版本号 |
 | `-h, --help` | 显示帮助 |
+
+界面与帮助文案默认跟随系统语言（中文或英文），也可用 `--lang` 强制指定。
 
 输出长这样：
 
