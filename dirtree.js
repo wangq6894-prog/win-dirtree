@@ -3,6 +3,11 @@
 
 // dirtree.js - 把盘符或文件夹里的所有内容画成树状图，写进一个文本文件
 
+if (process.platform !== 'win32') {
+  process.stderr.write('错误：dirtree 仅支持 Windows。\n');
+  process.exit(1);
+}
+
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -32,6 +37,7 @@ const FLUSH_THRESHOLD = 4 * 1024 * 1024;
 const DEFAULT_JOBS = 32;
 const MAX_JOBS = 512;
 const LONG_PATH_THRESHOLD = 250;
+const RESULT_FILE_ENV = 'DIRTREE_RESULT_FILE';
 
 const HELP = `用法：node dirtree.js <盘符或文件夹> [输出文件] [选项]
 
@@ -50,14 +56,28 @@ const HELP = `用法：node dirtree.js <盘符或文件夹> [输出文件] [选�
   -h, --help        显示这段帮助
 
 说明：
+  · 仅支持 Windows
   · 目录名末尾带分隔符，文件不带；目录排在文件前面，各自按名称排序
   · 符号链接不跟随，只标注 [link]；没权限的目录标注 [无法访问]
   · 结果默认存在被扫描的盘/文件夹里；那里写不进去会问你是否用管理员
     身份重跑，也会告诉你文件最终存到了哪里
 `;
 
+// 提权后的子进程跑在新开的控制台窗口里，输出一闪而过看不到；
+// 让它把收尾消息写进这个文件，由原进程读出来转述。
+function writeResultFile(message) {
+  const target = process.env[RESULT_FILE_ENV];
+  if (!target) return;
+  try {
+    fs.writeFileSync(target, message + '\n');
+  } catch {
+    // 转述失败不影响主流程
+  }
+}
+
 function fail(message) {
   process.stderr.write(message + '\n');
+  writeResultFile(message);
   process.exit(1);
 }
 
@@ -128,12 +148,11 @@ function parseArgs(argv) {
 }
 
 function normalizeRoot(input) {
-  if (process.platform === 'win32' && /^[A-Za-z]:$/.test(input)) return input + SEP;
+  if (/^[A-Za-z]:$/.test(input)) return input + SEP;
   return path.resolve(input);
 }
 
 function toLongPath(target) {
-  if (process.platform !== 'win32') return target;
   if (target.startsWith('\\\\?\\')) return target;
   if (target.length < LONG_PATH_THRESHOLD) return target;
   if (/^[A-Za-z]:/.test(target)) return '\\\\?\\' + target;
@@ -161,7 +180,7 @@ function compareEntries(a, b) {
 }
 
 function sameText(a, b) {
-  return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
+  return a.toLowerCase() === b.toLowerCase();
 }
 
 function tryOpenFile(file) {
@@ -193,22 +212,18 @@ function buildOpenError(outFile, err, userTarget, userOut) {
     lines.push('  1) 加 --elevate 让脚本自己申请管理员权限：');
     lines.push(`     node ${script} ${targetPart}${outPart} --elevate`);
     lines.push('  2) 把输出换成有写权限的位置，例如：');
-    lines.push(`     node ${script} ${targetPart} "$env:USERPROFILE\\tree.txt"`);
+    lines.push(`     node ${script} ${targetPart} "%USERPROFILE%\\tree.txt"`);
     lines.push('  3) 给该目录补写权限（需要管理员，会修改系统 ACL，请自行决定）：');
     lines.push(`     icacls "${dir}" /grant "${user}:(OI)(CI)(M)"`);
   } else {
     lines.push('提示：换一个输出位置试试：');
-    lines.push(`     node ${script} ${targetPart} "$env:USERPROFILE\\tree.txt"`);
+    lines.push(`     node ${script} ${targetPart} "%USERPROFILE%\\tree.txt"`);
   }
 
   return lines.join('\n');
 }
 
 function isElevated() {
-  if (process.platform !== 'win32') {
-    return typeof process.getuid === 'function' && process.getuid() === 0;
-  }
-
   const result = spawnSync(
     'powershell',
     [
@@ -265,6 +280,22 @@ function psArgument(text) {
   return "'" + winArgQuote(text).replace(/'/g, "''") + "'";
 }
 
+function relayResultFile(resultFile) {
+  let message = null;
+  try {
+    message = fs.readFileSync(resultFile, 'utf8');
+  } catch {
+    return; // 子进程没留下收尾消息就不补
+  }
+  try {
+    fs.unlinkSync(resultFile);
+  } catch {
+    // 删不掉就留给系统清理临时目录，不影响结果
+  }
+  message = message.trim();
+  if (message) process.stdout.write(message + '\n');
+}
+
 function relaunchElevated(relaunchArgs) {
   const script = path.resolve(process.argv[1] || __filename);
   const argList = [script, ...relaunchArgs].map(psArgument).join(', ');
@@ -274,9 +305,12 @@ function relaunchElevated(relaunchArgs) {
     'exit 1',
   ].join('; ');
 
+  const resultFile = path.join(os.tmpdir(), `dirtree-result-${process.pid}.txt`);
   const result = spawnSync('powershell', ['-NoProfile', '-Command', command], {
     stdio: 'inherit',
+    env: { ...process.env, [RESULT_FILE_ENV]: resultFile },
   });
+  relayResultFile(resultFile);
 
   if (result.error || result.status === null) {
     process.stderr.write('提权失败：无法启动 PowerShell，请手动以管理员身份运行。\n');
@@ -571,6 +605,20 @@ async function main() {
   const skipDir = path.dirname(actualOut);
   const skipName = path.basename(actualOut);
 
+  // Ctrl+C / Ctrl+Break：关掉并删掉没写完的输出文件，不留半个结果误导人
+  const cancel = () => {
+    try {
+      fs.closeSync(fd);
+    } catch {}
+    try {
+      fs.unlinkSync(actualOut);
+    } catch {}
+    process.stderr.write('\n已取消：未完成的输出文件已删除。\n');
+    process.exit(130);
+  };
+  process.on('SIGINT', cancel);
+  process.on('SIGBREAK', cancel);
+
   try {
     const blocks =
       options.depth === 0
@@ -583,8 +631,13 @@ async function main() {
     fs.closeSync(fd);
   }
 
+  process.off('SIGINT', cancel);
+  process.off('SIGBREAK', cancel);
+
   const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);
-  process.stdout.write(`树状图已写入 ${actualOut}（耗时 ${seconds} 秒）\n`);
+  const message = `树状图已写入 ${actualOut}（耗时 ${seconds} 秒）`;
+  process.stdout.write(message + '\n');
+  writeResultFile(message);
 }
 
 main().catch((err) => {

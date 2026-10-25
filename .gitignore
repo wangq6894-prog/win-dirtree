@@ -9,6 +9,9 @@
 # 依赖目录（本项目零依赖，防止手滑）
 node_modules/
 
+# 零依赖，锁文件没有信息量
+package-lock.json
+
 # 编辑器 / 系统文件
 .vscode/
 .idea/

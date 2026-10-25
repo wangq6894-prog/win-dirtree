@@ -1,0 +1,32 @@
+{
+  "name": "dirtree",
+  "version": "1.0.0",
+  "description": "把盘符或文件夹里的所有文件和文件夹画成树状图，写进一个文本文件（仅限 Windows）",
+  "keywords": [
+    "tree",
+    "directory-tree",
+    "windows",
+    "cli"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wangq6894-prog/win-dirtree.git"
+  },
+  "author": "chong",
+  "os": [
+    "win32"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "bin": {
+    "dirtree": "dirtree.js"
+  },
+  "files": [
+    "dirtree.js"
+  ],
+  "scripts": {
+    "test": "node test.js"
+  }
+}
